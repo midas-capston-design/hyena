@@ -6,9 +6,16 @@ import math
 import random
 from pathlib import Path
 from typing import Dict, List, Tuple
-from collections import deque, defaultdict
+from collections import deque
 import numpy as np
 import pywt
+from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
+
+# Random seed 고정 (재현성)
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
 
 # 정규화 기준값
 BASE_MAG = (-33.0, -15.0, -42.0)
@@ -219,9 +226,9 @@ def process_csv_sliding(
     # 회전 노드만 추출 (waypoints)
     waypoints = get_turn_waypoints(path, turn_nodes)
 
-    # 경로 정보 출력 (디버그용, 처음 10개만)
-    if debug_count is not None and len(waypoints) > 2 and debug_count[0] < 10:
-        print(f"  🛤️  {file_path.name}: {start_node}→{end_node}")
+    # 경로 정보 출력 (디버그용, 대표 1개만)
+    if debug_count is not None and len(waypoints) > 2 and debug_count[0] < 1:
+        print(f"  🛤️  대표 경로 예시: {file_path.name} ({start_node}→{end_node})")
         print(f"      전체 경로: {path}")
         print(f"      회전 포인트: {waypoints} ({len(waypoints)-2}개 회전)")
         debug_count[0] += 1
@@ -296,6 +303,14 @@ def process_csv_sliding(
 
     return samples
 
+def process_csv_wrapper(args):
+    """멀티프로세싱용 래퍼"""
+    csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride = args
+    # 멀티프로세싱에서는 debug 출력 끔
+    return process_csv_sliding(
+        csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, None
+    )
+
 def preprocess_sliding(
     raw_dir: Path,
     nodes_path: Path,
@@ -322,57 +337,53 @@ def preprocess_sliding(
     print(f"🔄 회전 가능 노드: {sorted(turn_nodes)}")
     print()
 
-    # 모든 CSV 파일 처리 (경로별로 그룹화)
-    path_to_samples = defaultdict(list)
+    # 모든 CSV 파일 처리 (멀티프로세싱)
+    all_samples = []
     csv_files = list(raw_dir.glob("*.csv"))
 
-    print(f"📂 총 {len(csv_files)}개 파일 처리 중...")
-    print(f"   (경로 찾기 활성화: 회전 경로 자동 감지)\n")
-
-    debug_count = [0]  # mutable counter
-    for csv_file in csv_files:
-        samples = process_csv_sliding(
-            csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, debug_count
-        )
-        if samples:
-            # 경로 ID 추출 (파일명: "1_23_0.csv" → path_id: "1_23")
-            parts = csv_file.stem.split("_")
-            path_id = f"{parts[0]}_{parts[1]}"
-            path_to_samples[path_id].extend(samples)
-
-    # 전체 샘플 수 계산
-    total_samples = sum(len(samples) for samples in path_to_samples.values())
-    print(f"✅ 총 {total_samples}개 샘플 생성 ({len(path_to_samples)}개 경로)")
+    n_cores = cpu_count()
+    print(f"📂 총 {len(csv_files)}개 파일 처리 중... (CPU 코어: {n_cores}개)")
+    print(f"   (경로 찾기 활성화: 회전 경로 자동 감지)")
     print()
 
-    # Train/Val/Test 분할 (경로 기반 - 층화 추출)
-    print("📊 경로 기반 층화 분할 수행 중...")
-    paths = list(path_to_samples.keys())
-    random.shuffle(paths)
+    # 멀티프로세싱 인자 준비
+    args_list = [
+        (csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride)
+        for csv_file in csv_files
+    ]
 
-    n_paths = len(paths)
-    n_train_paths = int(n_paths * train_ratio)
-    n_val_paths = int(n_paths * val_ratio)
+    # 병렬 처리
+    with Pool(processes=n_cores) as pool:
+        results = list(tqdm(
+            pool.imap(process_csv_wrapper, args_list),
+            total=len(csv_files),
+            desc="파일 처리 중",
+            ncols=80,
+            unit="file"
+        ))
 
-    train_paths = paths[:n_train_paths]
-    val_paths = paths[n_train_paths:n_train_paths + n_val_paths]
-    test_paths = paths[n_train_paths + n_val_paths:]
+    # 결과 합치기
+    for samples in results:
+        all_samples.extend(samples)
 
-    # 각 split의 샘플 수집
-    train_samples = []
-    val_samples = []
-    test_samples = []
+    print(f"\n✅ 총 {len(all_samples)}개 샘플 생성")
+    print()
 
-    for path in train_paths:
-        train_samples.extend(path_to_samples[path])
-    for path in val_paths:
-        val_samples.extend(path_to_samples[path])
-    for path in test_paths:
-        test_samples.extend(path_to_samples[path])
+    # Train/Val/Test 분할
+    random.shuffle(all_samples)
 
-    print(f"  Train: {len(train_samples)}개 샘플 ({len(train_paths)}개 경로)")
-    print(f"  Val:   {len(val_samples)}개 샘플 ({len(val_paths)}개 경로)")
-    print(f"  Test:  {len(test_samples)}개 샘플 ({len(test_paths)}개 경로)")
+    n_total = len(all_samples)
+    n_train = int(n_total * train_ratio)
+    n_val = int(n_total * val_ratio)
+
+    train_samples = all_samples[:n_train]
+    val_samples = all_samples[n_train:n_train + n_val]
+    test_samples = all_samples[n_train + n_val:]
+
+    print(f"📊 데이터 분할:")
+    print(f"  Train: {len(train_samples)}개 샘플")
+    print(f"  Val:   {len(val_samples)}개 샘플")
+    print(f"  Test:  {len(test_samples)}개 샘플")
     print()
 
     # 저장
@@ -388,10 +399,13 @@ def preprocess_sliding(
     # 메타데이터 저장
     n_features = len(train_samples[0]["features"][0])
     meta = {
+        "seed": SEED,
         "feature_mode": feature_mode,
         "n_features": n_features,
         "window_size": window_size,
         "stride": stride,
+        "train_ratio": train_ratio,
+        "val_ratio": val_ratio,
         "n_train": len(train_samples),
         "n_val": len(val_samples),
         "n_test": len(test_samples),
