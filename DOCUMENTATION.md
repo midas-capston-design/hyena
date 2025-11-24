@@ -378,7 +378,7 @@ clip_grad_norm_(model.parameters(), 1.0)
     ↓
 [Early Stopping] ← 최적 모델 저장 (P90 기준)
     ↓
-[Best Model] (P90=1.801m, RMSE=2.019m, MAE=1.008m)
+[Best Model] (MAE=0.948m, P90=1.660m, RMSE=2.202m, Median=0.552m)
 ```
 
 ---
@@ -431,7 +431,7 @@ lstm/
 │   └── best.pt
 │
 ├── checkpoints_sliding_mag4/ # 최고 성능 모델 ⭐
-│   └── best.pt              # P90=1.801m 달성
+│   └── best.pt              # MAE=0.948m, P90=1.660m 달성
 │
 └── run_sliding_window.sh     # 메인 실행 스크립트
 ```
@@ -674,10 +674,10 @@ if epoch > warmup_epochs:
 - **과적합/과소적합 동시 대응**: 상황에 따라 자동 조절
 - **ReduceLROnPlateau 대비**: 증가도 가능, 빠른 수렴
 
-**실제 효과 (Epoch 1-72):**
+**실제 효과 (Epoch 1-110):**
 - Warmup: Epoch 1-5 (LR 점진 증가)
-- 빠른 수렴: Epoch 6-57 (Best P90=1.830m)
-- 안정화: Epoch 58-72 (Early Stopping)
+- 빠른 수렴: Epoch 6-95 (Best P90=1.660m)
+- 안정화: Epoch 96-110 (Early Stopping)
 
 #### 5. **Early Stopping (P90 기준)**
 ```python
@@ -885,8 +885,7 @@ matplotlib>=3.7.0     # 시각화
 ### 평가 메트릭
 
 #### 📊 기본 메트릭:
-- **PE** (Positioning Error): 위치 오차 = MAE
-- **MAE** (Mean Absolute Error): 평균 절대 오차
+- **MAE** (Mean Absolute Error): 평균 절대 오차 (위치 오차의 평균)
 - **RMSE** (Root Mean Squared Error): 제곱 평균 제곱근 (큰 오차에 민감)
 
 #### 📈 분포 메트릭:
@@ -913,17 +912,20 @@ matplotlib>=3.7.0     # 시각화
 
 | 지표 | 목표 | 달성 (sliding_mag4) | 상태 |
 |------|------|---------------------|------|
-| **P90** | < 2m | **1.801m** | ✅ 달성 |
-| **RMSE** | < 1.8m | **2.019m** | ⚠️ 근접 |
-| **MAE** | < 1.4m | **1.008m** | ✅ 달성 |
-| **Median** | < 1m | **0.678m** | ✅ 달성 |
-| **CDF ≤3m** | > 85% | (계산 필요) | - |
+| **MAE** | < 1.4m | **0.948m** | ✅ 달성 |
+| **P90** | < 2m | **1.660m** | ✅ 달성 |
+| **Median** | < 1m | **0.552m** | ✅ 달성 |
+| **RMSE** | < 1.8m | **2.202m** | ⚠️ 근접 |
+| **CDF ≤1m** | - | **75.2%** | 📊 |
+| **CDF ≤2m** | - | **93.4%** | 📊 |
+| **CDF ≤3m** | > 85% | **96.5%** | ✅ 달성 |
 
 **🎯 핵심 성과:**
-- P90 < 2m 목표 달성 (90%가 1.8m 이내)
-- 평균 오차 1m 이내 (MAE)
-- 중앙값 0.7m (절반이 0.7m 이내)
-- Epoch 57에서 최적 성능, Epoch 72에서 Early Stopping
+- P90 < 2m 목표 달성 (90%가 1.66m 이내)
+- 평균 오차 0.95m (MAE < 1m)
+- 중앙값 0.55m (절반이 0.6m 이내)
+- CDF 96.5% (3m 이내 예측)
+- Epoch 95에서 최적 성능, Epoch 110에서 Early Stopping
 
 ---
 
