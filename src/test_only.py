@@ -193,8 +193,18 @@ def test_model(
         print(f"\n🔊 Noise Robustness Test:")
         print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-        noise_levels = [0.1, 0.2, 0.5]
-        for noise_std in noise_levels:
+        # 신호 표준편차 계산 (전체 test 데이터)
+        all_features = []
+        for features, _ in test_loader:
+            all_features.append(features)
+        all_features = torch.cat(all_features, dim=0)
+        signal_std = all_features.std().item()
+
+        # 퍼센트 기반 노이즈 레벨 (신호 대비 상대적)
+        noise_percentages = [1, 5, 10, 20]
+
+        for noise_pct in noise_percentages:
+            noise_std = signal_std * (noise_pct / 100.0)
             noise_distances = []
 
             with torch.no_grad():
@@ -202,7 +212,7 @@ def test_model(
                     features = features.to(device)
                     targets = targets.to(device)
 
-                    # Add Gaussian noise
+                    # Add Gaussian noise (percentage of signal)
                     noise = torch.randn_like(features) * noise_std
                     noisy_features = features + noise
 
@@ -228,7 +238,7 @@ def test_model(
             noise_mae = np.mean(noise_distances)
             degradation = ((noise_mae - test_mae) / test_mae) * 100
 
-            print(f"  Noise σ={noise_std:.1f}: MAE={noise_mae:.3f}m (degradation: {degradation:+.1f}%)")
+            print(f"  Noise {noise_pct:>2d}%: MAE={noise_mae:.3f}m (degradation: {degradation:+.1f}%)")
 
     print("\n" + "=" * 80)
     print("✅ 테스트 완료!")

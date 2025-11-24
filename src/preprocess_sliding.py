@@ -6,7 +6,7 @@ import math
 import random
 from pathlib import Path
 from typing import Dict, List, Tuple
-from collections import deque
+from collections import deque, defaultdict
 import numpy as np
 import pywt
 
@@ -322,8 +322,8 @@ def preprocess_sliding(
     print(f"🔄 회전 가능 노드: {sorted(turn_nodes)}")
     print()
 
-    # 모든 CSV 파일 처리
-    all_samples = []
+    # 모든 CSV 파일 처리 (경로별로 그룹화)
+    path_to_samples = defaultdict(list)
     csv_files = list(raw_dir.glob("*.csv"))
 
     print(f"📂 총 {len(csv_files)}개 파일 처리 중...")
@@ -334,26 +334,45 @@ def preprocess_sliding(
         samples = process_csv_sliding(
             csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, debug_count
         )
-        all_samples.extend(samples)
+        if samples:
+            # 경로 ID 추출 (파일명: "1_23_0.csv" → path_id: "1_23")
+            parts = csv_file.stem.split("_")
+            path_id = f"{parts[0]}_{parts[1]}"
+            path_to_samples[path_id].extend(samples)
 
-    print(f"✅ 총 {len(all_samples)}개 샘플 생성")
+    # 전체 샘플 수 계산
+    total_samples = sum(len(samples) for samples in path_to_samples.values())
+    print(f"✅ 총 {total_samples}개 샘플 생성 ({len(path_to_samples)}개 경로)")
     print()
 
-    # Train/Val/Test 분할
-    random.shuffle(all_samples)
+    # Train/Val/Test 분할 (경로 기반 - 층화 추출)
+    print("📊 경로 기반 층화 분할 수행 중...")
+    paths = list(path_to_samples.keys())
+    random.shuffle(paths)
 
-    n_total = len(all_samples)
-    n_train = int(n_total * train_ratio)
-    n_val = int(n_total * val_ratio)
+    n_paths = len(paths)
+    n_train_paths = int(n_paths * train_ratio)
+    n_val_paths = int(n_paths * val_ratio)
 
-    train_samples = all_samples[:n_train]
-    val_samples = all_samples[n_train:n_train + n_val]
-    test_samples = all_samples[n_train + n_val:]
+    train_paths = paths[:n_train_paths]
+    val_paths = paths[n_train_paths:n_train_paths + n_val_paths]
+    test_paths = paths[n_train_paths + n_val_paths:]
 
-    print(f"📊 데이터 분할:")
-    print(f"  Train: {len(train_samples)}개 샘플")
-    print(f"  Val:   {len(val_samples)}개 샘플")
-    print(f"  Test:  {len(test_samples)}개 샘플")
+    # 각 split의 샘플 수집
+    train_samples = []
+    val_samples = []
+    test_samples = []
+
+    for path in train_paths:
+        train_samples.extend(path_to_samples[path])
+    for path in val_paths:
+        val_samples.extend(path_to_samples[path])
+    for path in test_paths:
+        test_samples.extend(path_to_samples[path])
+
+    print(f"  Train: {len(train_samples)}개 샘플 ({len(train_paths)}개 경로)")
+    print(f"  Val:   {len(val_samples)}개 샘플 ({len(val_paths)}개 경로)")
+    print(f"  Test:  {len(test_samples)}개 샘플 ({len(test_paths)}개 경로)")
     print()
 
     # 저장
