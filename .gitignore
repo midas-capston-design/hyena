@@ -105,3 +105,6 @@ analysis/outputs/*.csv
 # Backup files
 *.bak
 *.backup
+
+# Cache files
+.cache/
