@@ -127,7 +127,7 @@ def test_model(
             targets = targets.to(device)
 
             if use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     edge_ids = torch.zeros(features.size(0), dtype=torch.long, device=device)
                     outputs = model(features, edge_ids)
                     pred = outputs[:, -1, :]
@@ -151,7 +151,6 @@ def test_model(
     # 기본 메트릭
     test_rmse = np.sqrt(np.mean(test_distances_array ** 2))
     test_mae = np.mean(test_distances_array)
-    test_pe = test_mae  # Positioning Error = MAE
 
     # Percentiles
     test_median = np.median(test_distances_array)
@@ -216,7 +215,7 @@ def test_model(
                     noisy_features = features + noise
 
                     if use_amp:
-                        with torch.cuda.amp.autocast():
+                        with torch.amp.autocast('cuda'):
                             edge_ids = torch.zeros(noisy_features.size(0), dtype=torch.long, device=device)
                             outputs = model(noisy_features, edge_ids)
                             pred = outputs[:, -1, :]

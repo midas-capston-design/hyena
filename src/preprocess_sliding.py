@@ -31,7 +31,7 @@ def normalize_coord(x: float, y: float) -> Tuple[float, float]:
     return (x_norm, y_norm)
 
 def wavelet_denoise(signal: List[float], wavelet='db4', level=3) -> List[float]:
-    """Wavelet denoising"""
+    """Wavelet denoising (level=3)"""
     coeffs = pywt.wavedec(signal, wavelet, level=level)
     sigma = np.median(np.abs(coeffs[-1])) / 0.6745
     uthresh = sigma * np.sqrt(2 * np.log(len(signal)))
@@ -174,6 +174,7 @@ def process_csv_sliding(
     feature_mode: str = "mag3",
     window_size: int = 250,
     stride: int = 50,
+    wavelet_level: int = 3,
     debug_count: List[int] = None,
 ) -> List[Dict]:
     """CSV를 sliding window로 처리
@@ -197,9 +198,9 @@ def process_csv_sliding(
         return []
 
     # Wavelet denoising
-    clean_magx = wavelet_denoise(magx)
-    clean_magy = wavelet_denoise(magy)
-    clean_magz = wavelet_denoise(magz)
+    clean_magx = wavelet_denoise(magx, level=wavelet_level)
+    clean_magy = wavelet_denoise(magy, level=wavelet_level)
+    clean_magz = wavelet_denoise(magz, level=wavelet_level)
 
     # 경로 정보로 위치 얻기
     parts = file_path.stem.split("_")
@@ -305,10 +306,10 @@ def process_csv_sliding(
 
 def process_csv_wrapper(args):
     """멀티프로세싱용 래퍼"""
-    csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride = args
+    csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, wavelet_level = args
     # 멀티프로세싱에서는 debug 출력 끔
     return process_csv_sliding(
-        csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, None
+        csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, wavelet_level, None
     )
 
 def preprocess_sliding(
@@ -320,15 +321,77 @@ def preprocess_sliding(
     stride: int = 50,
     train_ratio: float = 0.6,
     val_ratio: float = 0.2,
+    wavelet_level: int = 3,
+    force: bool = False,
 ):
-    """Sliding window 방식 전처리"""
+    """Sliding window 방식 전처리
+
+    Args:
+        force: True면 기존 전처리 결과를 무시하고 강제로 재실행
+    """
     print("=" * 80)
     print("🔄 Sliding Window 전처리 시작")
     print("=" * 80)
     print(f"  Feature mode: {feature_mode}")
     print(f"  Window size: {window_size}")
     print(f"  Stride: {stride}")
+    print(f"  Wavelet level: {wavelet_level}")
     print()
+
+    # 기존 전처리 결과 확인
+    meta_path = output_dir / "meta.json"
+    train_path = output_dir / "train.jsonl"
+    val_path = output_dir / "val.jsonl"
+    test_path = output_dir / "test.jsonl"
+
+    if not force and meta_path.exists() and train_path.exists() and val_path.exists() and test_path.exists():
+        # 메타데이터 로드하여 파라미터 비교
+        try:
+            with meta_path.open() as f:
+                existing_meta = json.load(f)
+
+            # 주요 파라미터 비교 (전처리에 영향을 끼치는 모든 파라미터)
+            params_match = (
+                existing_meta.get("seed") == SEED and
+                existing_meta.get("feature_mode") == feature_mode and
+                existing_meta.get("window_size") == window_size and
+                existing_meta.get("stride") == stride and
+                existing_meta.get("train_ratio") == train_ratio and
+                existing_meta.get("val_ratio") == val_ratio and
+                existing_meta.get("wavelet_level") == wavelet_level and
+                existing_meta.get("wavelet_type") == "db4" and
+                existing_meta.get("base_mag") == list(BASE_MAG) and
+                existing_meta.get("coord_center") == list(COORD_CENTER) and
+                existing_meta.get("coord_scale") == COORD_SCALE
+            )
+
+            if params_match:
+                print("✅ 전처리가 이미 완료되었습니다!")
+                print(f"   출력 디렉토리: {output_dir}")
+                print(f"   Train: {existing_meta.get('n_train')}개 샘플")
+                print(f"   Val:   {existing_meta.get('n_val')}개 샘플")
+                print(f"   Test:  {existing_meta.get('n_test')}개 샘플")
+                print()
+                print("💡 강제로 재실행하려면 --force 옵션을 사용하세요.")
+                print("=" * 80)
+                return existing_meta
+            else:
+                print("⚠️  기존 전처리 결과와 파라미터가 다릅니다. 재실행합니다.")
+                print(f"   기존: feature_mode={existing_meta.get('feature_mode')}, "
+                      f"window_size={existing_meta.get('window_size')}, "
+                      f"stride={existing_meta.get('stride')}, "
+                      f"wavelet_level={existing_meta.get('wavelet_level')}")
+                print(f"   요청: feature_mode={feature_mode}, "
+                      f"window_size={window_size}, "
+                      f"stride={stride}, "
+                      f"wavelet_level={wavelet_level}")
+                print()
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"⚠️  메타데이터 파일이 손상되었습니다. 재실행합니다. ({e})")
+            print()
+    elif force:
+        print("🔥 강제 재실행 모드 (--force)")
+        print()
 
     # 노드 및 그래프
     positions, turn_nodes = read_nodes(nodes_path)
@@ -348,7 +411,7 @@ def preprocess_sliding(
 
     # 멀티프로세싱 인자 준비
     args_list = [
-        (csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride)
+        (csv_file, positions, graph, turn_nodes, feature_mode, window_size, stride, wavelet_level)
         for csv_file in csv_files
     ]
 
@@ -406,6 +469,11 @@ def preprocess_sliding(
         "stride": stride,
         "train_ratio": train_ratio,
         "val_ratio": val_ratio,
+        "wavelet_level": wavelet_level,
+        "wavelet_type": "db4",
+        "base_mag": list(BASE_MAG),
+        "coord_center": list(COORD_CENTER),
+        "coord_scale": COORD_SCALE,
         "n_train": len(train_samples),
         "n_val": len(val_samples),
         "n_test": len(test_samples),
@@ -435,6 +503,8 @@ if __name__ == "__main__":
     parser.add_argument("--stride", type=int, default=50)
     parser.add_argument("--train-ratio", type=float, default=0.6)
     parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--wavelet-level", type=int, default=3, help="Wavelet denoising level (기본: 3)")
+    parser.add_argument("--force", action="store_true", help="기존 전처리 결과를 무시하고 강제로 재실행")
 
     args = parser.parse_args()
 
@@ -447,4 +517,6 @@ if __name__ == "__main__":
         stride=args.stride,
         train_ratio=args.train_ratio,
         val_ratio=args.val_ratio,
+        wavelet_level=args.wavelet_level,
+        force=args.force,
     )

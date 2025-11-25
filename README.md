@@ -52,7 +52,8 @@ python src/preprocess_sliding.py \
   --raw-dir data/raw \
   --nodes data/nodes_final.csv \
   --output data/sliding_mag4 \
-  --feature-mode mag4
+  --feature-mode mag4 \
+  --wavelet-level 3
 ```
 
 ### 3. 모델 학습
@@ -173,6 +174,70 @@ git lfs status
 - ✅ **LFS 설치 후 클론**: 모든 파일이 정상적으로 다운로드됨
 - 📦 **저장소 크기**: ~800MB (LFS 파일 포함)
 
+## 📋 TODO - 다음 실험 계획
+
+### 1️⃣ 전처리 개선: 구간별 세밀한 분할
+**현재**: Train/Val/Test를 랜덤 셔플로 분할
+**개선안**: 경로별, 구간별로 체계적으로 분할
+- 경로별 균등 분배 (각 경로가 train/val/test에 고르게 분포)
+- 시간 구간별 분할 (초반/중반/후반 구간 고려)
+- 회전 노드 기준 세그먼트별 분리
+- Cross-validation 고려
+
+### 2️⃣ Wavelet Denoising 효과 검증
+**비교 실험**:
+- ✅ Wavelet 있음 (현재)
+- ❌ Wavelet 없음 (raw 데이터 직접 사용)
+- 📊 성능 비교: MAE, P90, RMSE, 노이즈 강건성
+
+### 3️⃣ Feature 모드 비교
+**mag3 vs mag4 성능 비교**:
+- mag3: MagX, MagY, MagZ (3 features)
+- mag4: mag3 + Magnitude (4 features)
+- 평가: magnitude 추가의 실제 효과 검증
+
+### 4️⃣ 추가 개선 가능 항목
+- 하이퍼파라미터 튜닝 (learning rate, hidden_dim, depth)
+- Augmentation 기법 추가
+- 다른 정규화 기법 실험
+- 앙상블 모델
+
+### 5️⃣ Adaptive Normalization 고도화
+**현재**: 파일별 Z-score normalization (평균/std로 "쥐어짜기")
+**개선안**:
+- 세그먼트별 adaptive normalization
+- 슬라이딩 윈도우 내 동적 정규화
+- 캘리브레이션 drift 더 세밀하게 대응
+- 경로 특성 반영한 normalization
+
+참고: DOCUMENTATION.md의 "Adaptive Normalization" (Z-score per file) 섹션
+
+### 6️⃣ Outlier 문제 해결 (3m 이상 오차 2.8%)
+**분석 결과** (`analysis/analyze_outlier_cause.py` 실행):
+- **X 방향이 Y보다 3.6배 나쁨** (상대 오차 9.7% vs 2.7%)
+- MagX 변동성 -22% → X 방향 자기장 정보 부족
+- 센서 불안정성: 변화율 +13%, MagZ std +17%
+- 위치 집중: X=-45~-30m 구간에 52%
+
+**해결 방안 (우선순위 순)**:
+
+#### Phase 1: Quick Wins (즉시 실행 가능)
+1. Wavelet denoising 강화 (level 3 → 4)
+2. 불안정한 샘플 필터링 (자기장 변화율 임계값)
+3. 예상 효과: Outlier 20-30% 감소
+
+#### Phase 2: Core Improvements
+4. X/Y 방향별 Loss 가중치 조정 (X에 2배 페널티)
+5. MagX Feature Engineering (누적 변화량, 이동 평균, 기울기)
+6. 예상 효과: X 방향 오차 25-35% 감소
+
+#### Phase 3: Data Enhancement
+7. 특정 구간 Oversampling (X=-45~-30m)
+8. 시간축 Augmentation (역순, 스트레칭, 압축)
+9. 예상 효과: 30-40% 추가 감소
+
+**최종 목표**: Outlier 71개 (2.8%) → 25-35개 (1.0-1.4%)
+
 ## 📖 상세 문서
 
 더 자세한 내용은 [DOCUMENTATION.md](DOCUMENTATION.md)를 참고하세요:
@@ -195,7 +260,7 @@ MIT License
 
 ---
 
-**Last Updated**: 2025-11-24
-**Version**: 1.0
+**Last Updated**: 2025-11-25
+**Version**: 1.1
 **Best Model**: MAE=0.948m, P90=1.660m (checkpoints_sliding_mag4/best.pt)
 **Repository**: https://github.com/midas-capston-design/hyena

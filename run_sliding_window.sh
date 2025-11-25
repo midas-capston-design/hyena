@@ -14,7 +14,7 @@ echo ""
 FEATURE_MODE="mag4"  # mag3, mag4, full
 WINDOW_SIZE=250
 STRIDE=50
-EPOCHS=200         # 충분한 학습 시간 확보
+EPOCHS=400         # 충분한 학습 시간 확보
 BATCH_SIZE=64      # MPS 활용, 학습 속도 향상
 HIDDEN_DIM=384     # 모델 용량 증가 (성능 개선)
 DEPTH=10           # 더 깊은 표현력

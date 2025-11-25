@@ -27,6 +27,26 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+class WeightedXYLoss(nn.Module):
+    """X/Y 방향별 가중치 Loss
+
+    X 방향 오차가 Y보다 3.6배 크므로, X에 더 높은 페널티 적용
+    """
+    def __init__(self, x_weight=2.0, y_weight=1.0):
+        super().__init__()
+        self.x_weight = x_weight
+        self.y_weight = y_weight
+
+    def forward(self, pred, target):
+        """
+        Args:
+            pred: [batch, 2] - (x_norm, y_norm)
+            target: [batch, 2] - (x_norm, y_norm)
+        """
+        x_loss = torch.mean((pred[:, 0] - target[:, 0]) ** 2) * self.x_weight
+        y_loss = torch.mean((pred[:, 1] - target[:, 1]) ** 2) * self.y_weight
+        return x_loss + y_loss
+
 def denormalize_coord(x_norm: float, y_norm: float):
     x = x_norm * COORD_SCALE + COORD_CENTER[0]
     y = y_norm * COORD_SCALE + COORD_CENTER[1]
@@ -170,7 +190,8 @@ def train_sliding(
     base_lr = lr
     warmup_factor = 0.1  # 초기 학습률은 10%부터 시작
 
-    criterion = nn.MSELoss()
+    # X 방향 오차가 Y보다 3.6배 크므로, X에 2배 페널티 적용
+    criterion = WeightedXYLoss(x_weight=2.0, y_weight=1.0)
 
     # Training - P90 기준으로 best model 선택
     best_val_p90 = float("inf")
@@ -204,7 +225,7 @@ def train_sliding(
 
             # Mixed Precision Training
             if use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     # Hyena expects [batch, seq_len, features]
                     edge_ids = torch.zeros(features.size(0), dtype=torch.long, device=device)
                     outputs = model(features, edge_ids)  # [batch, 250, 2]
@@ -260,7 +281,7 @@ def train_sliding(
 
                 # Validation도 AMP 사용
                 if use_amp:
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast('cuda'):
                         edge_ids = torch.zeros(features.size(0), dtype=torch.long, device=device)
                         outputs = model(features, edge_ids)
                         pred = outputs[:, -1, :]
@@ -350,7 +371,7 @@ def train_sliding(
 
             # Test도 AMP 사용
             if use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     edge_ids = torch.zeros(features.size(0), dtype=torch.long, device=device)
                     outputs = model(features, edge_ids)
                     pred = outputs[:, -1, :]
@@ -374,7 +395,6 @@ def train_sliding(
     # 기본 메트릭
     test_rmse = np.sqrt(np.mean(test_distances_array ** 2))
     test_mae = np.mean(test_distances_array)
-    test_pe = test_mae  # Positioning Error = MAE
 
     # Percentiles
     test_median = np.median(test_distances_array)
@@ -393,7 +413,6 @@ def train_sliding(
         f"\n[Test Results]\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📊 기본 메트릭:\n"
-        f"  PE (Positioning Error):  {test_pe:.3f}m\n"
         f"  MAE (Mean Absolute):     {test_mae:.3f}m\n"
         f"  RMSE (Root Mean Sq):     {test_rmse:.3f}m\n"
         f"\n"
@@ -429,7 +448,7 @@ def train_sliding(
                 noisy_features = features + noise
 
                 if use_amp:
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast('cuda'):
                         edge_ids = torch.zeros(noisy_features.size(0), dtype=torch.long, device=device)
                         outputs = model(noisy_features, edge_ids)
                         pred = outputs[:, -1, :]

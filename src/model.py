@@ -83,9 +83,17 @@ class HyenaOperator(nn.Module):
 
         # FFT long convolution
         # filt와 u_short를 element-wise 곱한 뒤 FFT conv
-        U = torch.fft.rfft(u_short, dim=1)  # (batch, freq, dim)
-        Filt = torch.fft.rfft(filt.unsqueeze(0), n=seq_len, dim=1)  # (1, freq, dim)
+        # cuFFT는 half precision에서 2의 거듭제곱 크기만 지원하므로 float32로 변환
+        orig_dtype = u_short.dtype
+        u_short_f32 = u_short.float()
+        filt_f32 = filt.float()
+
+        U = torch.fft.rfft(u_short_f32, dim=1)  # (batch, freq, dim)
+        Filt = torch.fft.rfft(filt_f32.unsqueeze(0), n=seq_len, dim=1)  # (1, freq, dim)
         filtered = torch.fft.irfft(U * Filt, n=seq_len, dim=1)  # (batch, seq_len, dim)
+
+        # 원래 dtype으로 복원
+        filtered = filtered.to(orig_dtype)
 
         # Multiple gating: v * filtered * z (if order >= 2)
         output = v * filtered

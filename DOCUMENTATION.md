@@ -1032,7 +1032,6 @@ python src/test_only.py \
 [Test Results]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 기본 메트릭:
-  PE (Positioning Error):  1.820m
   MAE (Mean Absolute):     1.820m
   RMSE (Root Mean Sq):     2.150m
 

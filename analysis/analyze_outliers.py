@@ -10,14 +10,54 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-# 한글 폰트 설정
-try:
-    font_path = '/System/Library/Fonts/Supplemental/AppleGothic.ttf'
-    font_prop = fm.FontProperties(fname=font_path)
-    plt.rcParams['font.family'] = font_prop.get_name()
+# 한글 폰트 설정 (OS 자동 감지)
+def setup_korean_font():
+    """운영체제에 맞는 한글 폰트 자동 설정"""
+    import platform
+
+    system = platform.system()
+
+    # 시스템별 한글 폰트 후보
+    font_candidates = []
+
+    if system == 'Darwin':  # macOS
+        font_candidates = [
+            'AppleGothic',
+            'Apple SD Gothic Neo',
+            'NanumGothic',
+        ]
+    elif system == 'Windows':
+        font_candidates = [
+            'Malgun Gothic',
+            'NanumGothic',
+            'Gulim',
+        ]
+    else:  # Linux
+        font_candidates = [
+            'NanumGothic',
+            'NanumBarunGothic',
+            'UnDotum',
+            'DejaVu Sans',
+        ]
+
+    # 사용 가능한 폰트 목록 가져오기
+    available_fonts = [f.name for f in fm.fontManager.ttflist]
+
+    # 후보 중 사용 가능한 첫 번째 폰트 찾기
+    for font in font_candidates:
+        if font in available_fonts:
+            plt.rcParams['font.family'] = font
+            plt.rcParams['axes.unicode_minus'] = False
+            print(f"✅ 한글 폰트 설정: {font}")
+            return True
+
+    # 한글 폰트를 찾지 못한 경우
+    print("⚠️  한글 폰트를 찾을 수 없습니다. 기본 폰트로 표시됩니다.")
     plt.rcParams['axes.unicode_minus'] = False
-except:
-    print("⚠️ 한글 폰트 로드 실패")
+    return False
+
+# 한글 폰트 설정 시도
+setup_korean_font()
 
 # 프로젝트 루트 경로 추가
 sys.path.append(str(Path(__file__).parent.parent / "src"))
@@ -52,7 +92,7 @@ class SlidingWindowDataset(Dataset):
 def analyze_outliers(
     checkpoint_path: Path,
     data_dir: Path,
-    threshold: float = 5.0,  # 5m 이상을 아웃라이어로 정의
+    threshold: float = 3.0,  # 3m 이상을 아웃라이어로 정의
     device: str = "cpu",
 ):
     """아웃라이어 분석"""
@@ -163,14 +203,13 @@ def analyze_outliers(
     # 오차 큰 순으로 정렬
     sorted_indices = outlier_indices[np.argsort(all_errors[outlier_indices])[::-1]]
 
-    for idx in sorted_indices[:20]:  # 상위 20개만 출력
+    # 모든 outlier 출력
+    for idx in sorted_indices:
         error = all_errors[idx]
         pred = all_predictions[idx]
         target = all_targets[idx]
         print(f"{idx:<8} {error:<12.3f} ({pred[0]:>6.2f}, {pred[1]:>6.2f})      ({target[0]:>6.2f}, {target[1]:>6.2f})")
 
-    if len(sorted_indices) > 20:
-        print(f"... (총 {len(sorted_indices)}개 중 상위 20개만 표시)")
     print()
 
     # 통계
@@ -188,7 +227,7 @@ def analyze_outliers(
     print("=" * 80)
     print("📈 전체 오차 분포")
     print("=" * 80)
-    percentiles = [50, 75, 90, 95, 99, 99.5, 100]
+    percentiles = [10, 25, 50, 75, 90, 95, 99, 99.5, 100]
     for p in percentiles:
         val = np.percentile(all_errors, p)
         print(f"  P{p:>5}: {val:>8.3f}m")
@@ -216,19 +255,19 @@ def analyze_outliers(
 
     plt.subplot(2, 2, 1)
     plt.hist(all_errors, bins=50, edgecolor='black', alpha=0.7)
-    plt.axvline(threshold, color='red', linestyle='--', label=f'Outlier threshold ({threshold}m)')
-    plt.xlabel('Error (m)', fontproperties=font_prop)
-    plt.ylabel('Count', fontproperties=font_prop)
-    plt.title('전체 오차 분포', fontproperties=font_prop)
-    plt.legend(prop=font_prop)
+    plt.axvline(threshold, color='red', linestyle='--', label=f'임계값 ({threshold}m)')
+    plt.xlabel('오차 (m)')
+    plt.ylabel('개수')
+    plt.title('전체 오차 분포')
+    plt.legend()
     plt.grid(True, alpha=0.3)
 
     # 2. 오차 분포 (5m 이하만)
     plt.subplot(2, 2, 2)
     plt.hist(all_errors[all_errors <= 5], bins=50, edgecolor='black', alpha=0.7, color='green')
-    plt.xlabel('Error (m)', fontproperties=font_prop)
-    plt.ylabel('Count', fontproperties=font_prop)
-    plt.title('정상 범위 오차 분포 (≤5m)', fontproperties=font_prop)
+    plt.xlabel('오차 (m)')
+    plt.ylabel('개수')
+    plt.title(f'정상 범위 (≤{threshold}m)')
     plt.grid(True, alpha=0.3)
 
     # 3. CDF (누적 분포)
@@ -239,19 +278,19 @@ def analyze_outliers(
     plt.axvline(threshold, color='red', linestyle='--', label=f'{threshold}m')
     plt.axhline(90, color='orange', linestyle='--', label='P90')
     plt.axhline(95, color='blue', linestyle='--', label='P95')
-    plt.xlabel('Error (m)', fontproperties=font_prop)
-    plt.ylabel('Cumulative %', fontproperties=font_prop)
-    plt.title('누적 분포 함수 (CDF)', fontproperties=font_prop)
-    plt.legend(prop=font_prop)
+    plt.xlabel('오차 (m)')
+    plt.ylabel('누적 비율 (%)')
+    plt.title('누적 분포 함수 (CDF)')
+    plt.legend()
     plt.grid(True, alpha=0.3)
     plt.xlim(0, min(10, np.max(all_errors)))
 
     # 4. Box plot
     plt.subplot(2, 2, 4)
     plt.boxplot([all_errors[all_errors <= 5], outlier_errors],
-                labels=['정상 (≤5m)', f'아웃라이어 (≥{threshold}m)'])
-    plt.ylabel('Error (m)', fontproperties=font_prop)
-    plt.title('오차 분포 비교', fontproperties=font_prop)
+                tick_labels=[f'정상 (≤{threshold}m)', f'이상치 (≥{threshold}m)'])
+    plt.ylabel('오차 (m)')
+    plt.title('오차 분포 비교')
     plt.grid(True, alpha=0.3, axis='y')
 
     plt.tight_layout()
@@ -288,9 +327,9 @@ def analyze_outliers(
         outlier_target_y = [t[1] for t in outlier_targets]
 
         plt.scatter(outlier_target_x, outlier_target_y, c='red', s=100, marker='o',
-                   edgecolors='darkred', linewidths=2, label='아웃라이어 (실제)', zorder=5)
+                   edgecolors='darkred', linewidths=2, label='이상치 (실제)', zorder=5)
         plt.scatter(outlier_pred_x, outlier_pred_y, c='orange', s=100, marker='x',
-                   linewidths=3, label='아웃라이어 (예측)', zorder=5)
+                   linewidths=3, label='이상치 (예측)', zorder=5)
 
         # 화살표로 연결
         for i in range(len(outlier_indices)):
@@ -300,10 +339,10 @@ def analyze_outliers(
                      color='red', alpha=0.3, width=0.1, head_width=0.5,
                      length_includes_head=True, zorder=4)
 
-        plt.xlabel('X (m)', fontproperties=font_prop)
-        plt.ylabel('Y (m)', fontproperties=font_prop)
-        plt.title(f'예측 vs 실제 위치 (아웃라이어 {len(outlier_indices)}개)', fontproperties=font_prop)
-        plt.legend(prop=font_prop)
+        plt.xlabel('X (m)')
+        plt.ylabel('Y (m)')
+        plt.title(f'예측 vs 실제 위치 (이상치: {len(outlier_indices)}개)')
+        plt.legend()
         plt.grid(True, alpha=0.3)
         plt.axis('equal')
 
@@ -322,7 +361,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze outliers in predictions")
     parser.add_argument("--checkpoint", type=str, default="checkpoints_sliding_mag4/best.pt")
     parser.add_argument("--data-dir", type=str, default="data/sliding_mag4")
-    parser.add_argument("--threshold", type=float, default=5.0, help="Outlier threshold in meters")
+    parser.add_argument("--threshold", type=float, default=3.0, help="Outlier threshold in meters")
     parser.add_argument("--cpu", action="store_true", help="Force CPU usage")
 
     args = parser.parse_args()
