@@ -108,3 +108,11 @@ analysis/outputs/*.csv
 
 # Cache files
 .cache/
+
+# Deprecated directories
+checkpoints_sliding_*/
+docs/
+
+# Old data directories (if exists)
+data/sliding_window/
+data/sliding/

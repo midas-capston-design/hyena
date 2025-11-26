@@ -11,8 +11,8 @@ from tqdm import tqdm
 import sys
 
 # 역정규화
-COORD_CENTER = (-41.0, 0.0)
-COORD_SCALE = 50.0
+COORD_CENTER = (-44.3, -0.3)
+COORD_SCALE = 48.8
 
 def denormalize_coord(x_norm: float, y_norm: float):
     x = x_norm * COORD_SCALE + COORD_CENTER[0]

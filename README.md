@@ -2,13 +2,7 @@
 
 지자기 센서 데이터를 이용한 실내 측위 시스템 (Hyena Architecture)
 
-## 🎯 프로젝트 개요
-
-**Midas Capstone Design Project**
-
-Hyena 아키텍처 기반 딥러닝 모델을 사용하여 지자기 센서 데이터(MagX, MagY, MagZ)로부터 실내 위치를 추정하는 시스템입니다.
-
-### 핵심 성과 ✅
+## 🎯 핵심 성과
 
 | 지표 | 목표 | 달성 | 상태 |
 |------|------|------|------|
@@ -18,249 +12,133 @@ Hyena 아키텍처 기반 딥러닝 모델을 사용하여 지자기 센서 데�
 | **RMSE** | < 2.5m | **2.202m** | ✅ |
 
 - 🎯 **90%의 예측이 1.66m 이내 오차**
-- 📊 **평균 오차 0.95m** (1m 이내 달성)
-- 🏆 **중앙값 0.55m** (절반이 0.6m 이내)
-- 📍 **CDF**: ≤1m (75.2%), ≤2m (93.4%), ≤3m (96.5%)
-
-### 노이즈 강건성 🔊
-
-신호 대비 상대적 노이즈 테스트 (문헌 기준: 1-10%가 일반적 범위):
-
-| 노이즈 레벨 | MAE | 성능 저하 | 평가 |
-|------------|-----|----------|------|
-| **1%** | 0.560m | +0.1% | ✅ 실제 센서 노이즈 |
-| **5%** | 0.568m | +1.6% | ✅ 매우 강건 |
-| **10%** | 0.621m | +11.0% | ⚠️ 센서 품질 저하 |
-| **20%** | 0.885m | +58.1% | ❌ 극한 시나리오 |
-
-> **실제 지자기 센서 노이즈**: 약 1-2% 수준 → 모델이 실제 환경에서 매우 강건함
+- 📊 **평균 오차 0.95m**
+- 🏆 **중앙값 0.55m**
 
 ## 🚀 빠른 시작
 
 ### 1. 환경 설정
-
 ```bash
-# Python 3.13 권장
-bash scripts/setup.sh
+python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### 2. 데이터 전처리
+### 2. 전체 파이프라인 실행 (한 줄로 끝)
 
+#### 🆕 새 전처리 (권장): 격자 기반 좌표 보간
 ```bash
-python src/preprocess_sliding.py \
-  --raw-dir data/raw \
-  --nodes data/nodes_final.csv \
-  --output data/sliding_mag4 \
-  --feature-mode mag4 \
-  --wavelet-level 3
+./run_new_pipeline.sh
 ```
+- Raw → Preprocessed (격자 0.45m 기반 좌표 추가)
+- Preprocessed → JSONL (슬라이딩 윈도우)
+- 학습 자동 실행
 
-### 3. 모델 학습
-
+#### 🔄 구 전처리: 회전 노드 기반 세그먼트 보간
 ```bash
-python src/train_sliding.py \
-  --data-dir data/sliding_mag4 \
-  --epochs 200 \
-  --batch-size 64 \
-  --hidden-dim 384 \
-  --depth 10
+./run_sliding_window.sh
 ```
+- Raw → JSONL (한 번에 처리)
+- 회전 노드 기반 선형 보간
+- 학습 자동 실행
 
-### 4. 테스트
-
+### 3. 단계별 실행 (필요시)
 ```bash
-# 저장된 체크포인트로 테스트
-python src/test_only.py \
-  --checkpoint checkpoints_sliding_mag4/best.pt \
+# Step 1: Raw → Preprocessed
+python3 scripts/preprocessing/preprocess_all_data.py
+
+# Step 2: Preprocessed → JSONL
+bash scripts/run_preprocess.sh
+
+# Step 3: 학습
+bash scripts/run_train.sh
+
+# Step 4: 테스트
+python3 src/test_only.py \
+  --checkpoint models/hyena_mag4/checkpoints/best.pt \
   --data-dir data/sliding_mag4
 ```
-
-## 🧠 핵심 기술
-
-### Hyena Architecture
-- **O(n log n) 복잡도**: Transformer의 O(n²)보다 효율적
-- **FFT 기반 Long Convolution**: 긴 시퀀스 패턴 학습
-- **250 타임스텝** 전체 경로 분석
-
-### 최신 학습 기법 (2025)
-- ✅ Mixed Precision Training (AMP)
-- ✅ 5-Epoch Moving Average Adaptive LR (양방향 조절)
-- ✅ Learning Rate Warmup
-- ✅ Early Stopping (P90 기준)
-- ✅ Gradient Clipping
-- ✅ Wavelet Denoising
-
-### 데이터 처리
-- **Sliding Window**: 250 steps, stride 50
-- **Graph-based Path Finding**: BFS 최단 경로 탐색
-- **Turn Node Interpolation**: 회전 노드 기반 세그먼트 보간
-- **Adaptive Normalization**: Z-score per file (캘리브레이션 drift 대응)
 
 ## 📁 프로젝트 구조
 
 ```
 lstm/
-├── src/                      # 소스 코드
-│   ├── model.py             # Hyena 모델
-│   ├── preprocess_sliding.py # 전처리
-│   ├── train_sliding.py     # 학습
-│   └── test_only.py         # 테스트
+├── run_new_pipeline.sh      # 🆕 새 전처리 전체 파이프라인
+├── run_sliding_window.sh    # 🔄 구 전처리 전체 파이프라인
+├── README.md                # 메인 문서
+├── requirements.txt
 │
-├── data/                     # 데이터 (Git LFS)
-│   ├── raw/                 # 원본 CSV (404개)
-│   ├── sliding_mag4/        # 전처리 데이터
-│   └── nodes_final.csv      # 노드 정보
+├── src/                     # 소스 코드
+│   ├── model.py                  # Hyena 모델
+│   ├── preprocess_from_csv.py    # 새: Preprocessed → JSONL
+│   ├── preprocess_sliding.py     # 구: Raw → JSONL
+│   ├── train_sliding.py          # 학습
+│   └── test_only.py              # 테스트
 │
-├── checkpoints_*/           # 모델 체크포인트 (Git LFS)
-│   └── best.pt
+├── scripts/                 # 실행 & 유틸리티 스크립트
+│   ├── run_preprocess.sh         # Step 2: CSV → JSONL
+│   ├── run_train.sh              # Step 3: 학습
+│   ├── run_all.sh                # 전체 (deprecated)
+│   └── preprocessing/
+│       └── preprocess_all_data.py   # Step 1: Raw → Preprocessed
 │
-├── analysis/                # 분석 도구
-├── map/                     # 맵 시각화
-├── scripts/                 # 실행 스크립트
+├── models/                  # 모델
+│   └── hyena_mag4/
+│       └── checkpoints/
+│           ├── best.pt
+│           └── last.pt
 │
-├── DOCUMENTATION.md         # 📘 상세 기술 문서
-├── README.md                # 이 파일
-└── requirements.txt         # 의존성
+├── data/
+│   ├── raw/                # 원본 센서 CSV (404개)
+│   ├── preprocessed/       # 좌표 추가된 CSV
+│   ├── sliding_mag4/       # 학습용 JSONL
+│   ├── nodes_final.csv
+│   └── node_connections.csv
+│
+└── analysis/               # 분석 스크립트
+    ├── outliers/          # Outlier 분석
+    ├── quality/           # 데이터 품질
+    ├── distribution/      # 데이터 분포
+    ├── performance/       # 모델 성능
+    └── basic/             # 기본 분석
 ```
+
+## 🧠 핵심 기술
+
+- **Hyena Architecture**: O(n log n) 복잡도, FFT 기반 Long Convolution
+- **Sliding Window**: 250 steps, stride 25
+- **Wavelet Denoising**: db4, level=3
+- **Mixed Precision Training (AMP)**
+- **Adaptive Learning Rate** (5-epoch moving average)
+- **Early Stopping** (P90 기준)
 
 ## 📊 데이터셋
 
-- **원본 데이터**: 404개 CSV 파일 (87개 경로 × 4-5개 샘플)
-- **전처리 후**: 13,611개 샘플 (Sliding Window)
-- **분할**: Train 60%, Val 20%, Test 20%
-- **센서**: MagX, MagY, MagZ, Magnitude
-- **노드**: 30개 (회전 노드 6개: 4, 10, 11, 20, 27, 28)
+- **원본**: 404개 CSV 파일 (87개 경로)
+- **전처리 후**: 13,611개 샘플
+- **분할**: Train 80%, Val 10%, Test 10%
+- **센서**: MagX, MagY, MagZ + Orientation (Yaw, Roll, Pitch)
 
-## 🔧 Git & Git LFS 설정
+## 🔧 Git LFS 설정
 
-이 프로젝트는 대용량 파일 관리를 위해 **Git LFS**를 사용합니다.
-
-### LFS로 관리되는 파일
-- `*.pt`, `*.pth`: 모델 체크포인트 (~80MB/파일)
-- `*.csv`: 센서 데이터 (404개 파일)
-- `*.jsonl`: 전처리 데이터 (~286MB)
-- `data/**`: 모든 데이터 디렉토리
-
-### 저장소 클론
+대용량 파일 관리를 위해 Git LFS 사용:
 
 ```bash
-# 1. Git LFS 설치 (처음 한 번만)
+# LFS 설치
 brew install git-lfs        # macOS
-# 또는
-apt-get install git-lfs    # Ubuntu
-
-# 2. LFS 초기화
 git lfs install
 
-# 3. 저장소 클론 (LFS 파일 자동 다운로드)
+# 저장소 클론
 git clone git@github.com:midas-capston-design/hyena.git
 cd hyena
 ```
-
-### LFS 파일 확인
-
-```bash
-# LFS로 관리되는 파일 확인
-git lfs ls-files
-
-# LFS 상태 확인
-git lfs status
-```
-
-### 주의사항
-
-- ⚠️ **LFS 없이 클론하면**: 대용량 파일이 포인터 파일로만 다운로드됨 (사용 불가)
-- ✅ **LFS 설치 후 클론**: 모든 파일이 정상적으로 다운로드됨
-- 📦 **저장소 크기**: ~800MB (LFS 파일 포함)
-
-## 📋 TODO - 다음 실험 계획
-
-### 1️⃣ 전처리 개선: 구간별 세밀한 분할
-**현재**: Train/Val/Test를 랜덤 셔플로 분할
-**개선안**: 경로별, 구간별로 체계적으로 분할
-- 경로별 균등 분배 (각 경로가 train/val/test에 고르게 분포)
-- 시간 구간별 분할 (초반/중반/후반 구간 고려)
-- 회전 노드 기준 세그먼트별 분리
-- Cross-validation 고려
-
-### 2️⃣ Wavelet Denoising 효과 검증
-**비교 실험**:
-- ✅ Wavelet 있음 (현재)
-- ❌ Wavelet 없음 (raw 데이터 직접 사용)
-- 📊 성능 비교: MAE, P90, RMSE, 노이즈 강건성
-
-### 3️⃣ Feature 모드 비교
-**mag3 vs mag4 성능 비교**:
-- mag3: MagX, MagY, MagZ (3 features)
-- mag4: mag3 + Magnitude (4 features)
-- 평가: magnitude 추가의 실제 효과 검증
-
-### 4️⃣ 추가 개선 가능 항목
-- 하이퍼파라미터 튜닝 (learning rate, hidden_dim, depth)
-- Augmentation 기법 추가
-- 다른 정규화 기법 실험
-- 앙상블 모델
-
-### 5️⃣ Adaptive Normalization 고도화
-**현재**: 파일별 Z-score normalization (평균/std로 "쥐어짜기")
-**개선안**:
-- 세그먼트별 adaptive normalization
-- 슬라이딩 윈도우 내 동적 정규화
-- 캘리브레이션 drift 더 세밀하게 대응
-- 경로 특성 반영한 normalization
-
-참고: DOCUMENTATION.md의 "Adaptive Normalization" (Z-score per file) 섹션
-
-### 6️⃣ Outlier 문제 해결 (3m 이상 오차 2.8%)
-**분석 결과** (`analysis/analyze_outlier_cause.py` 실행):
-- **X 방향이 Y보다 3.6배 나쁨** (상대 오차 9.7% vs 2.7%)
-- MagX 변동성 -22% → X 방향 자기장 정보 부족
-- 센서 불안정성: 변화율 +13%, MagZ std +17%
-- 위치 집중: X=-45~-30m 구간에 52%
-
-**해결 방안 (우선순위 순)**:
-
-#### Phase 1: Quick Wins (즉시 실행 가능)
-1. Wavelet denoising 강화 (level 3 → 4)
-2. 불안정한 샘플 필터링 (자기장 변화율 임계값)
-3. 예상 효과: Outlier 20-30% 감소
-
-#### Phase 2: Core Improvements
-4. X/Y 방향별 Loss 가중치 조정 (X에 2배 페널티)
-5. MagX Feature Engineering (누적 변화량, 이동 평균, 기울기)
-6. 예상 효과: X 방향 오차 25-35% 감소
-
-#### Phase 3: Data Enhancement
-7. 특정 구간 Oversampling (X=-45~-30m)
-8. 시간축 Augmentation (역순, 스트레칭, 압축)
-9. 예상 효과: 30-40% 추가 감소
-
-**최종 목표**: Outlier 71개 (2.8%) → 25-35개 (1.0-1.4%)
-
-## 📖 상세 문서
-
-더 자세한 내용은 [DOCUMENTATION.md](DOCUMENTATION.md)를 참고하세요:
-
-- 🎯 기술 선택 이유 및 흐름
-- 🧠 Hyena 아키텍처 상세 설명
-- 🔄 데이터 전처리 파이프라인
-- 🎓 학습 기법 (Warmup, Adaptive LR, Early Stopping 등)
-- 📊 평가 메트릭 및 목표
-- 🐛 트러블슈팅
-- 📝 체크포인트 재평가 방법
 
 ## 🤝 기여
 
 Midas Capstone Design Team
 
-## 📄 라이선스
-
-MIT License
-
 ---
 
-**Last Updated**: 2025-11-25
-**Version**: 1.1
-**Best Model**: MAE=0.948m, P90=1.660m (checkpoints_sliding_mag4/best.pt)
+**Last Updated**: 2025-11-26
+**Best Model**: MAE=0.948m, P90=1.660m
 **Repository**: https://github.com/midas-capston-design/hyena

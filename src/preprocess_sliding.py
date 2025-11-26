@@ -19,8 +19,8 @@ np.random.seed(SEED)
 
 # 정규화 기준값
 BASE_MAG = (-33.0, -15.0, -42.0)
-COORD_CENTER = (-41.0, 0.0)
-COORD_SCALE = 50.0
+COORD_CENTER = (-44.3, -0.3)
+COORD_SCALE = 48.8
 
 def normalize_mag(val: float, base: float) -> float:
     return (val - base) / 10.0
@@ -54,33 +54,28 @@ def read_nodes(path: Path) -> Tuple[Dict[int, Tuple[float, float]], set]:
                 turn_nodes.add(node_id)
     return positions, turn_nodes
 
-def build_graph(positions: Dict[int, Tuple[float, float]]) -> Dict[int, List[Tuple[int, float]]]:
-    """그래프 구축 - 복도 구조만 연결 (같은 행/열)"""
+def build_graph(positions: Dict[int, Tuple[float, float]], connections_path: Path) -> Dict[int, List[Tuple[int, float]]]:
+    """그래프 구축 - 연결 파일 기반"""
     graph = {node: [] for node in positions}
-    nodes = sorted(positions.keys())
 
-    # 물리적으로 연결 불가능한 쌍 (벽 등)
-    blocked_connections = {(10, 28), (28, 10), (24, 25), (25, 24)}
+    # 연결 파일 읽기
+    with connections_path.open() as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            a = int(row["node1"])
+            b = int(row["node2"])
 
-    for i, a in enumerate(nodes):
-        for b in nodes[i+1:]:
-            # 차단된 연결 확인
-            if (a, b) in blocked_connections or (b, a) in blocked_connections:
+            if a not in positions or b not in positions:
                 continue
 
+            # Manhattan distance 계산
             xa, ya = positions[a]
             xb, yb = positions[b]
-            # Manhattan distance (복도 구조: 대각선 이동 불가)
             dist = abs(xb - xa) + abs(yb - ya)
 
-            # 5m 이하이고 같은 행/열만 연결
-            if dist <= 5.0:
-                same_row = abs(ya - yb) < 0.5  # y 차이 < 0.5m
-                same_col = abs(xa - xb) < 0.5  # x 차이 < 0.5m
-
-                if same_row or same_col:
-                    graph[a].append((b, dist))
-                    graph[b].append((a, dist))
+            # 양방향 연결
+            graph[a].append((b, dist))
+            graph[b].append((a, dist))
 
     return graph
 
@@ -395,7 +390,8 @@ def preprocess_sliding(
 
     # 노드 및 그래프
     positions, turn_nodes = read_nodes(nodes_path)
-    graph = build_graph(positions)
+    connections_path = nodes_path.parent / "node_connections.csv"
+    graph = build_graph(positions, connections_path)
 
     print(f"🔄 회전 가능 노드: {sorted(turn_nodes)}")
     print()

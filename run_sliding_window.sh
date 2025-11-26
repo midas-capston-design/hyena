@@ -20,6 +20,17 @@ HIDDEN_DIM=384     # 모델 용량 증가 (성능 개선)
 DEPTH=10           # 더 깊은 표현력
 PATIENCE=15        # 충분히 기다려서 최적점 찾기
 
+# Device 자동 감지 (cuda > mps > cpu)
+DEVICE=$(python3 -c "
+import torch
+if torch.cuda.is_available():
+    print('cuda')
+elif torch.backends.mps.is_available():
+    print('mps')
+else:
+    print('cpu')
+")
+
 echo "========================================="
 echo "📊 [1/2] 전처리 (Sliding Window)"
 echo "========================================="
@@ -37,6 +48,8 @@ echo ""
 echo "========================================="
 echo "🧠 [2/2] 학습 (Causal Hyena)"
 echo "========================================="
+echo "Device: $DEVICE"
+echo ""
 python3 src/train_sliding.py \
   --data-dir data/sliding_${FEATURE_MODE} \
   --epochs $EPOCHS \
@@ -46,12 +59,13 @@ python3 src/train_sliding.py \
   --depth $DEPTH \
   --dropout 0.12 \
   --patience $PATIENCE \
-  --checkpoint-dir checkpoints_sliding_${FEATURE_MODE}
+  --checkpoint-dir models/hyena_${FEATURE_MODE}/checkpoints \
+  --device $DEVICE
 
 echo ""
 echo "========================================="
 echo "✅ 완료!"
 echo "========================================="
 echo ""
-echo "체크포인트: checkpoints_sliding_${FEATURE_MODE}/best.pt"
+echo "체크포인트: models/hyena_${FEATURE_MODE}/checkpoints/best.pt"
 echo "========================================="

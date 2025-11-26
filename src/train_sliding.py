@@ -11,8 +11,8 @@ import numpy as np
 from tqdm import tqdm
 
 # 역정규화
-COORD_CENTER = (-41.0, 0.0)
-COORD_SCALE = 50.0
+COORD_CENTER = (-44.3, -0.3)
+COORD_SCALE = 48.8
 
 def set_seed(seed=42):
     """재현성을 위한 시드 고정"""
@@ -97,7 +97,7 @@ def train_sliding(
     depth: int = 8,
     dropout: float = 0.1,
     patience: int = 10,
-    checkpoint_dir: Path = Path("checkpoints_sliding"),
+    checkpoint_dir: Path = Path("models/hyena_mag4/checkpoints"),
     device: str = "cuda",
     seed: int = 42,
     warmup_epochs: int = 5,
@@ -485,7 +485,7 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--patience", type=int, default=10)
-    parser.add_argument("--checkpoint-dir", default="checkpoints_sliding")
+    parser.add_argument("--checkpoint-dir", default="models/hyena_mag4/checkpoints")
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--warmup-epochs", type=int, default=5, help="Learning rate warmup epochs")
