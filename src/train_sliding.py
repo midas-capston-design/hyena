@@ -28,14 +28,16 @@ def set_seed(seed=42):
     torch.backends.cudnn.benchmark = False
 
 class WeightedXYLoss(nn.Module):
-    """X/Y 방향별 가중치 Loss
+    """X/Y 방향별 가중치 Loss with Huber (SmoothL1)
 
     X 방향 오차가 Y보다 3.6배 크므로, X에 더 높은 페널티 적용
+    Huber Loss 사용으로 Outlier에 더 강건함
     """
-    def __init__(self, x_weight=2.0, y_weight=1.0):
+    def __init__(self, x_weight=2.0, y_weight=1.0, delta=1.0):
         super().__init__()
         self.x_weight = x_weight
         self.y_weight = y_weight
+        self.huber = nn.SmoothL1Loss(reduction='mean', beta=delta)
 
     def forward(self, pred, target):
         """
@@ -43,8 +45,8 @@ class WeightedXYLoss(nn.Module):
             pred: [batch, 2] - (x_norm, y_norm)
             target: [batch, 2] - (x_norm, y_norm)
         """
-        x_loss = torch.mean((pred[:, 0] - target[:, 0]) ** 2) * self.x_weight
-        y_loss = torch.mean((pred[:, 1] - target[:, 1]) ** 2) * self.y_weight
+        x_loss = self.huber(pred[:, 0], target[:, 0]) * self.x_weight
+        y_loss = self.huber(pred[:, 1], target[:, 1]) * self.y_weight
         return x_loss + y_loss
 
 def denormalize_coord(x_norm: float, y_norm: float):
